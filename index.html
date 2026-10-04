@@ -1,0 +1,527 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>檸檬車市場模擬</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Serif+TC:wght@600;700&family=Noto+Sans+TC:wght@400;500;700&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: 左邊是「展示場／車主家」兩個停車格與 100 位買方；右邊是本期數字、旁白與兩張走勢圖。 */
+:root{
+  --bg:#eef1f3; --panel:#ffffff; --panel-2:#f6f8f9; --line:#d5dbe0;
+  --fg:#1b2430; --muted:#5f6b7a; --faint:#98a3ae;
+  --accent:#3f6cd0; --accent-soft:#e3eafb;
+  --good:#15926e; --good-soft:#d6f1e8;
+  --lemon:#bf8300; --lemon-soft:#fbeec9;
+  --loss:#c0392b;
+  --font-display:"Noto Serif TC","Songti TC","PMingLiU",serif;
+  --font-body:"Noto Sans TC","PingFang TC","Microsoft JhengHei",system-ui,sans-serif;
+  --font-mono:"IBM Plex Mono",ui-monospace,Consolas,monospace;
+}
+@media (prefers-color-scheme: dark){ :root:not([data-theme="light"]){
+  --bg:#141a21; --panel:#1d252e; --panel-2:#232d38; --line:#36424f;
+  --fg:#e6ebf0; --muted:#a3aeba; --faint:#6c7885;
+  --accent:#6a90e0; --accent-soft:#263650;
+  --good:#1fa882; --good-soft:#1c3a33;
+  --lemon:#c2941f; --lemon-soft:#3d3419;
+  --loss:#e2695c; color-scheme:dark } }
+:root[data-theme="dark"]{
+  --bg:#141a21; --panel:#1d252e; --panel-2:#232d38; --line:#36424f;
+  --fg:#e6ebf0; --muted:#a3aeba; --faint:#6c7885;
+  --accent:#6a90e0; --accent-soft:#263650;
+  --good:#1fa882; --good-soft:#1c3a33;
+  --lemon:#c2941f; --lemon-soft:#3d3419;
+  --loss:#e2695c; color-scheme:dark }
+
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);font-family:var(--font-body);font-size:15px;line-height:1.6}
+.wrap{max-width:1180px;margin:0 auto;padding-block:24px 48px;padding-inline:16px;display:flex;flex-direction:column;gap:20px}
+
+header{display:flex;flex-wrap:wrap;align-items:flex-end;justify-content:space-between;gap:12px 24px}
+.eyebrow{font-size:12px;letter-spacing:.12em;text-transform:uppercase;color:var(--muted);font-family:var(--font-mono)}
+h1{font-family:var(--font-display);font-weight:700;font-size:clamp(26px,3.4vw,38px);line-height:1.2;margin:4px 0 0;text-wrap:balance}
+h1 small{display:block;font-family:var(--font-body);font-weight:400;font-size:15px;color:var(--muted);margin-top:6px}
+.setup{font-size:13px;color:var(--muted);max-width:40ch;line-height:1.7}
+.setup b{color:var(--fg);font-weight:500}
+
+/* controls */
+.controls{display:flex;flex-wrap:wrap;align-items:center;gap:10px 14px;background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:10px 14px}
+.btn{font:inherit;font-weight:500;border:1px solid var(--line);background:var(--panel-2);color:var(--fg);border-radius:8px;padding:7px 14px;cursor:pointer;display:inline-flex;align-items:center;gap:6px}
+.btn:hover{border-color:var(--accent)}
+.btn:focus-visible,.seg button:focus-visible,input:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.btn.primary{background:var(--accent);color:#fff;border-color:var(--accent)}
+.btn:disabled{opacity:.45;cursor:default}
+.seg{display:inline-flex;border:1px solid var(--line);border-radius:8px;overflow:hidden}
+.seg button{font:inherit;font-size:14px;border:0;background:var(--panel-2);color:var(--muted);padding:7px 14px;cursor:pointer}
+.seg button[aria-pressed="true"]{background:var(--fg);color:var(--bg)}
+.speed{display:inline-flex;align-items:center;gap:8px;font-size:13px;color:var(--muted)}
+.speed input{accent-color:var(--accent);width:110px}
+.spacer{flex:1}
+.period-chip{font-family:var(--font-mono);font-size:14px;background:var(--accent-soft);color:var(--fg);border-radius:999px;padding:4px 12px;font-variant-numeric:tabular-nums}
+.period-chip.eq{background:var(--lemon-soft)}
+
+/* main grid */
+.main{display:grid;grid-template-columns:minmax(0,1.35fr) minmax(300px,1fr);gap:20px;align-items:start}
+@media (max-width:860px){.main{grid-template-columns:1fr}}
+.panel{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:16px;min-width:0}
+.panel h2{font-family:var(--font-display);font-size:17px;font-weight:600;margin:0 0 10px}
+.panel h2 span{font-family:var(--font-body);font-weight:400;font-size:13px;color:var(--muted);margin-left:8px}
+
+/* stage with cars */
+.stage{position:relative;display:grid;grid-template-columns:1fr 1fr;gap:14px}
+@media (max-width:520px){.stage{grid-template-columns:1fr}}
+.zone{position:relative;border:1.5px dashed var(--line);border-radius:10px;background:var(--panel-2);min-height:120px;padding:34px 10px 10px}
+.zone.lot{border-style:solid;border-color:var(--accent);background:linear-gradient(var(--panel-2),var(--panel-2)) padding-box}
+.zone .label{position:absolute;top:8px;left:12px;right:12px;display:flex;justify-content:space-between;font-size:12px;letter-spacing:.06em;color:var(--muted)}
+.zone .label b{font-family:var(--font-mono);font-weight:500;color:var(--fg);font-variant-numeric:tabular-nums}
+.slots{display:grid;grid-template-columns:repeat(10,1fr);gap:4px}
+.slot{aspect-ratio:1.25;max-width:100%}
+.car{position:absolute;width:var(--cw);height:var(--ch);left:0;top:0;transform:translate(var(--x),var(--y));transition:transform .75s cubic-bezier(.4,.1,.2,1),opacity .4s;will-change:transform}
+.car svg{width:100%;height:100%;display:block;overflow:visible}
+.car.good svg .body{fill:var(--good)} .car.lemon svg .body{fill:var(--lemon)}
+.car .sold{opacity:0;transition:opacity .3s}
+.car.is-sold .sold{opacity:1}
+.car.leaving svg{animation:shake .5s ease}
+@keyframes shake{0%,100%{transform:translateX(0)}30%{transform:translateX(-2px)}60%{transform:translateX(2px)}}
+.car .tip{display:none}
+.legend{display:flex;flex-wrap:wrap;gap:6px 16px;font-size:13px;color:var(--muted);margin-top:12px}
+.legend i{display:inline-block;width:10px;height:10px;border-radius:2px;margin-right:6px;vertical-align:-1px}
+.legend .g i{background:var(--good)} .legend .l i{background:var(--lemon)}
+.legend .a i{background:var(--accent);border-radius:50%}
+.legend .s i{background:transparent;border:1.5px solid var(--faint);border-radius:50%}
+
+/* buyers */
+.buyers{margin-top:16px}
+.buyers h3{font-size:13px;font-weight:500;color:var(--muted);margin:0 0 8px;display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap}
+.buyers h3 b{font-family:var(--font-mono);font-weight:500;color:var(--fg)}
+.bgrid{display:grid;grid-template-columns:repeat(25,1fr);gap:4px}
+@media (max-width:520px){.bgrid{grid-template-columns:repeat(20,1fr)}}
+.buyer{aspect-ratio:1;border-radius:50%;border:1.5px solid var(--faint);background:transparent;transition:background .35s,border-color .35s,transform .35s}
+.buyer.got-good{background:var(--good);border-color:var(--good)}
+.buyer.got-lemon{background:var(--lemon);border-color:var(--lemon)}
+.buyer.burned{box-shadow:0 0 0 2px var(--panel),0 0 0 3.5px var(--loss)}
+
+/* right column */
+.side{display:flex;flex-direction:column;gap:16px;min-width:0}
+.stats{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}
+@media (max-width:420px){.stats{grid-template-columns:repeat(2,1fr)}}
+.stat{background:var(--panel-2);border-radius:8px;padding:10px 12px;min-width:0}
+.stat .k{font-size:12px;color:var(--muted);line-height:1.3}
+.stat .v{font-family:var(--font-mono);font-size:22px;font-weight:500;font-variant-numeric:tabular-nums;line-height:1.2;margin-top:4px;transition:color .3s}
+.stat .v small{font-size:12px;color:var(--muted);margin-left:2px;font-family:var(--font-body)}
+.stat.accent .v{color:var(--accent)}
+.stat.good .v{color:var(--good)} .stat.lemon .v{color:var(--lemon)} .stat.loss .v{color:var(--loss)}
+.stat .v.bump{animation:bump .5s ease}
+@keyframes bump{0%{transform:scale(1)}40%{transform:scale(1.12)}100%{transform:scale(1)}}
+
+.narr{border-left:3px solid var(--accent);padding:4px 0 4px 14px;min-height:112px}
+.narr p{margin:0 0 6px;font-size:14.5px}
+.narr p:last-child{margin:0}
+.narr .step{color:var(--muted);font-size:12px;font-family:var(--font-mono);letter-spacing:.06em}
+.narr em{font-style:normal;color:var(--accent);font-weight:500}
+.narr .good-t{color:var(--good);font-weight:500}.narr .lemon-t{color:var(--lemon);font-weight:500}.narr .loss-t{color:var(--loss);font-weight:500}
+.narr.eq{border-left-color:var(--lemon)}
+
+.chart{width:100%;height:auto;display:block;overflow:visible}
+.chart text{font-family:var(--font-mono);font-size:11px;fill:var(--muted)}
+.chart .grid{stroke:var(--line);stroke-width:1}
+.chart .axis{stroke:var(--faint);stroke-width:1}
+.chart .ln-p{stroke:var(--accent);stroke-width:2;fill:none;stroke-linejoin:round}
+.chart .ln-q{stroke:var(--fg);stroke-width:2;fill:none;stroke-dasharray:5 4;stroke-linejoin:round}
+.chart .pt-p{fill:var(--accent);stroke:var(--panel);stroke-width:2}
+.chart .pt-q{fill:var(--fg);stroke:var(--panel);stroke-width:2}
+.chart .bar-g{fill:var(--good)} .chart .bar-l{fill:var(--lemon)}
+.chart .hit{fill:transparent}
+.chart .ref{stroke:var(--good);stroke-dasharray:2 3;stroke-width:1}
+.chart .ref-t{fill:var(--good)}
+.clegend{display:flex;flex-wrap:wrap;gap:4px 14px;font-size:12px;color:var(--muted);margin-bottom:6px}
+.clegend i{display:inline-block;width:14px;height:0;border-top:2px solid var(--accent);margin-right:6px;vertical-align:3px}
+.clegend .q i{border-top:2px dashed var(--fg)}
+.clegend .g i{height:9px;border:0;background:var(--good);width:10px;vertical-align:-1px}
+.clegend .l i{height:9px;border:0;background:var(--lemon);width:10px;vertical-align:-1px}
+.tooltip{position:fixed;pointer-events:none;background:var(--fg);color:var(--bg);font-size:12px;font-family:var(--font-mono);padding:6px 9px;border-radius:6px;z-index:9;white-space:nowrap;opacity:0;transition:opacity .15s;transform:translate(-50%,calc(-100% - 10px))}
+.tooltip.on{opacity:1}
+
+/* explain */
+.explain{display:grid;grid-template-columns:repeat(3,1fr);gap:16px}
+@media (max-width:860px){.explain{grid-template-columns:1fr}}
+.explain .panel p{margin:6px 0 0;font-size:14px;color:var(--muted)}
+.explain .panel p b{color:var(--fg);font-weight:500}
+.formula{font-family:var(--font-mono);background:var(--panel-2);border-radius:6px;padding:8px 10px;font-size:13.5px;margin-top:10px;color:var(--fg);overflow-x:auto}
+.cmp{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:10px}
+.cmp div{background:var(--panel-2);border-radius:8px;padding:10px 12px}
+.cmp .k{font-size:12px;color:var(--muted)}
+.cmp .v{font-family:var(--font-mono);font-size:20px;font-weight:500;font-variant-numeric:tabular-nums}
+.cmp .v small{font-size:12px;font-family:var(--font-body);color:var(--muted)}
+footer{font-size:12.5px;color:var(--muted);line-height:1.7}
+
+@media (prefers-reduced-motion: reduce){
+  .car,.buyer,.stat .v{transition:none}
+  .car.leaving svg,.stat .v.bump{animation:none}
+}
+</style>
+</head>
+<body>
+
+
+<div class="wrap">
+<header>
+  <div>
+    <div class="eyebrow">農產業專題 · 第 5 週 · Akerlof (1970) The Market for “Lemons”</div>
+    <h1>檸檬車市場模擬<small>100 台二手車、100 位買方，一期一期看「爛車趕走好車」怎麼發生</small></h1>
+  </div>
+  <div class="setup">
+    <b>50 台好車</b>：車主估價 50–100 萬。<b>50 台檸檬</b>：車主估價 15–25 萬。買方對任何一台車的估價都是車主的 <b>1.5 倍</b>（Akerlof 的 3/2），但<b>看不出</b>哪台是檸檬，只能按展示場的平均品質出價。
+  </div>
+</header>
+
+<div class="controls">
+  <button class="btn primary" id="btnPlay">▶ 播放</button>
+  <button class="btn" id="btnStep">下一期 ›</button>
+  <button class="btn" id="btnReset">↺ 重設</button>
+  <label class="speed" for="speed">速度 <input type="range" id="speed" min="1" max="3" step="1" value="2"></label>
+  <span class="spacer"></span>
+  <div class="seg" role="group" aria-label="資訊情境">
+    <button id="modeA" aria-pressed="true">資訊不對稱</button>
+    <button id="modeS" aria-pressed="false">有認證：資訊對稱</button>
+  </div>
+  <span class="period-chip" id="chip">第 0 期 · 開市前</span>
+</div>
+
+<div class="main">
+  <section class="panel">
+    <h2>二手車市場<span>每一格一台車，顏色是只有車主知道的真相</span></h2>
+    <div class="stage" id="stage">
+      <div class="zone lot" id="lot">
+        <div class="label"><span>展示場（願意賣）</span><b id="lotCount">100 台</b></div>
+        <div class="slots" id="lotSlots"></div>
+      </div>
+      <div class="zone" id="home">
+        <div class="label"><span>留在家（這價不賣）</span><b id="homeCount">0 台</b></div>
+        <div class="slots" id="homeSlots"></div>
+      </div>
+    </div>
+    <div class="legend">
+      <span class="g"><i></i>好車（車主估價 50–100 萬）</span>
+      <span class="l"><i></i>檸檬（車主估價 15–25 萬）</span>
+      <span class="a"><i></i>本期成交</span>
+    </div>
+    <div class="buyers">
+      <h3><span>100 位買方</span><span>本期買到車：<b id="buyCount">0</b> 人 · 買貴了（付的比車值錢）：<b id="burnCount">0</b> 人</span></h3>
+      <div class="bgrid" id="bgrid"></div>
+      <div class="legend">
+        <span class="s"><i></i>沒買到</span>
+        <span class="g"><i style="border-radius:50%"></i>買到好車</span>
+        <span class="l"><i style="border-radius:50%"></i>買到檸檬</span>
+        <span><i style="border-radius:50%;background:transparent;box-shadow:0 0 0 1.5px var(--loss)"></i>紅圈：付的價格高於車的價值</span>
+      </div>
+    </div>
+  </section>
+
+  <aside class="side">
+    <section class="panel">
+      <h2>本期數字</h2>
+      <div class="stats">
+        <div class="stat accent"><div class="k">買方出價 p<br>= 1.5 × 預期品質</div><div class="v" id="sPrice">—<small>萬</small></div></div>
+        <div class="stat"><div class="k">買方預期的<br>平均品質 μ</div><div class="v" id="sMu">—<small>萬</small></div></div>
+        <div class="stat"><div class="k">展示場實際<br>平均品質</div><div class="v" id="sQ">—<small>萬</small></div></div>
+        <div class="stat good"><div class="k">展示場好車</div><div class="v" id="sGood">50<small>台</small></div></div>
+        <div class="stat lemon"><div class="k">展示場檸檬</div><div class="v" id="sLemon">50<small>台</small></div></div>
+        <div class="stat loss"><div class="k">買方每台<br>平均買貴</div><div class="v" id="sLoss">—<small>萬</small></div></div>
+      </div>
+    </section>
+    <section class="panel">
+      <h2>這一期發生了什麼</h2>
+      <div class="narr" id="narr">
+        <p class="step">開市前</p>
+        <p>100 台車都在展示場。買方知道市面上<em>一半是檸檬、一半是好車</em>，但分不出眼前這台是哪一種。按「播放」看市場怎麼一期一期縮小。</p>
+      </div>
+    </section>
+    <section class="panel">
+      <h2>出價 vs 實際品質<span>萬元</span></h2>
+      <div class="clegend"><span class="p"><i></i>買方出價 p</span><span class="q"><i></i>展示場實際平均品質</span></div>
+      <svg class="chart" id="chartP" viewBox="0 0 440 190" role="img" aria-label="各期買方出價與展示場平均品質"></svg>
+    </section>
+    <section class="panel">
+      <h2>展示場上的車<span>台</span></h2>
+      <div class="clegend"><span class="g"><i></i>好車</span><span class="l"><i></i>檸檬</span></div>
+      <svg class="chart" id="chartN" viewBox="0 0 440 170" role="img" aria-label="各期展示場好車與檸檬數量"></svg>
+    </section>
+  </aside>
+</div>
+
+<section class="explain">
+  <div class="panel">
+    <h2>為什麼好車會被趕走</h2>
+    <p><b>買方只能用「市場統計量」出價。</b>看不出個別品質，就按展示場的平均品質 μ 付 1.5μ。這個價對檸檬車主是天價，對好車車主卻不夠。</p>
+    <p><b>好車先退。</b>估價高於 p 的車主把車開回家，留下的車平均品質變差，下一期買方吃過虧、再降價，又趕走一批好車。</p>
+    <div class="formula">Akerlof：品質均勻分布時 μ = p/2，買方最多付 3μ/2 = 3p/4 &lt; p → 任何價格都沒有交易</div>
+  </div>
+  <div class="panel">
+    <h2>劣幣驅良幣，但類比不完整</h2>
+    <p><b>格雷欣法則</b>裡買賣雙方都分得出好錢壞錢，只是法定匯率固定，所以大家把好錢收起來、拿壞錢去花。</p>
+    <p><b>檸檬市場</b>裡只有賣方分得出好壞。壞車趕走好車靠的不是固定匯率，而是<b>資訊不對稱</b>。Akerlof 自己在文中標出這個差別，差別正是論文的重點。</p>
+    <p>模擬到最後：價格停在 30 萬上下，展示場只剩 50 台檸檬，50 台好車全在家裡。</p>
+  </div>
+  <div class="panel">
+    <h2>資訊不對稱的代價</h2>
+    <p>每一台好車，買方願付的比車主想要的多出 50%。這些雙方都有賺的交易一筆也沒成，這就是「不誠實的成本」：不只是被騙的錢，還有被消滅的誠實生意。</p>
+    <div class="cmp">
+      <div><div class="k">不對稱均衡 · 每期成交</div><div class="v" id="cTradeA">50<small> 台（全是檸檬）</small></div></div>
+      <div><div class="k">有認證 · 每期成交</div><div class="v">100<small> 台</small></div></div>
+      <div><div class="k">不對稱 · 交易利得</div><div class="v" id="cGainA">—<small> 萬</small></div></div>
+      <div><div class="k">有認證 · 交易利得</div><div class="v" id="cGainS">—<small> 萬</small></div></div>
+    </div>
+    <p>切到「有認證：資訊對稱」看對照組：買方看得見品質，100 台全部成交。保證、品牌、連鎖、執照、產銷履歷、有機標章，都是為了把這個市場救回來。</p>
+  </div>
+</section>
+
+<footer>模型為教學簡化版：買方按上一期觀察到的展示場平均品質調整預期（調整速度 0.35），每期同一批車重新開市；資訊對稱情境下每台車以車主估價的 1.25 倍成交。資料為模擬值，不是真實市場。</footer>
+</div>
+<div class="tooltip" id="tooltip"></div>
+
+<script>
+(function(){
+  // ---------- parameters ----------
+  const N_GOOD = 50, N_LEMON = 50, N_BUYERS = 100;
+  const BUYER_MULT = 1.5, SYM_PRICE_MULT = 1.25, LAMBDA = 0.35;
+
+  // deterministic RNG so the lecture replays identically
+  let seed = 20251005;
+  function rnd(){ seed = (seed * 1664525 + 1013904223) % 4294967296; return seed / 4294967296; }
+
+  // cars: evenly spaced within type (plus tiny jitter) so the story is smooth
+  const cars = [];
+  for (let i = 0; i < N_GOOD; i++) cars.push({ id: i, type: 'good', x: 50 + (i + 0.5) * (50 / N_GOOD) + (rnd() - .5) * 0.8 });
+  for (let i = 0; i < N_LEMON; i++) cars.push({ id: N_GOOD + i, type: 'lemon', x: 15 + (i + 0.5) * (10 / N_LEMON) + (rnd() - .5) * 0.15 });
+  cars.forEach(c => { c.zone = 'lot'; c.sold = false; });
+  const popMean = cars.reduce((s, c) => s + c.x, 0) / cars.length;
+
+  // ---------- state ----------
+  let mode = 'asym', period = 0, mu = popMean, history = [], playing = false, timer = null, busy = false, eqCount = 0;
+
+  // ---------- DOM ----------
+  const $ = id => document.getElementById(id);
+  const stage = $('stage'), lotSlots = $('lotSlots'), homeSlots = $('homeSlots'), bgrid = $('bgrid');
+  const carEls = new Map();
+  const CAR_SVG = '<svg viewBox="0 0 40 32"><path class="body" d="M4 20 L8 11 Q9 9 11 9 L27 9 Q29 9 30 11 L34 18 L37 19 Q38 20 38 22 L38 25 Q38 27 36 27 L4 27 Q2 27 2 25 L2 22 Q2 20 4 20 Z"/><path d="M11 12 L26 12 L29 18 L9 18 Z" fill="var(--panel)" opacity=".85"/><circle cx="11" cy="27" r="3.4" fill="var(--fg)"/><circle cx="29" cy="27" r="3.4" fill="var(--fg)"/><circle cx="11" cy="27" r="1.3" fill="var(--panel)"/><circle cx="29" cy="27" r="1.3" fill="var(--panel)"/><circle class="sold" cx="34" cy="7" r="5.5" fill="var(--accent)" stroke="var(--panel)" stroke-width="1.5"/><path class="sold" d="M31.3 7 L33.4 9 L36.8 5.2" stroke="#fff" stroke-width="1.6" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+
+  for (let i = 0; i < 100; i++) { lotSlots.appendChild(Object.assign(document.createElement('div'), { className: 'slot' })); homeSlots.appendChild(Object.assign(document.createElement('div'), { className: 'slot' })); }
+  cars.forEach(c => {
+    const el = document.createElement('div');
+    el.className = 'car ' + c.type; el.innerHTML = CAR_SVG;
+    el.title = (c.type === 'good' ? '好車' : '檸檬') + '，車主估價 ' + c.x.toFixed(1) + ' 萬';
+    stage.appendChild(el); carEls.set(c.id, el);
+  });
+  const buyerEls = [];
+  for (let i = 0; i < N_BUYERS; i++) { const b = document.createElement('div'); b.className = 'buyer'; bgrid.appendChild(b); buyerEls.push(b); }
+
+  // positions: pack each zone's cars into its grid, order by quality (high first)
+  function layout(animate = true) {
+    const sRect = stage.getBoundingClientRect();
+    const zones = { lot: lotSlots, home: homeSlots };
+    const slotRect = lotSlots.children[0].getBoundingClientRect();
+    stage.style.setProperty('--cw', slotRect.width + 'px');
+    stage.style.setProperty('--ch', slotRect.height + 'px');
+    ['lot', 'home'].forEach(z => {
+      const list = cars.filter(c => c.zone === z).sort((a, b) => b.x - a.x);
+      const used = Math.ceil(list.length / 10) * 10;
+      // size zone: show rows actually used (min 2 rows)
+      const rows = Math.max(2, Math.ceil(list.length / 10));
+      Array.from(zones[z].children).forEach((s, i) => s.style.display = i < rows * 10 ? '' : 'none');
+      list.forEach((c, i) => {
+        const r = zones[z].children[i].getBoundingClientRect();
+        const el = carEls.get(c.id);
+        if (!animate) el.style.transition = 'none';
+        el.style.setProperty('--x', (r.left - sRect.left) + 'px');
+        el.style.setProperty('--y', (r.top - sRect.top) + 'px');
+        if (!animate) { el.getBoundingClientRect(); el.style.transition = ''; }
+      });
+    });
+    $('lotCount').textContent = cars.filter(c => c.zone === 'lot').length + ' 台';
+    $('homeCount').textContent = cars.filter(c => c.zone === 'home').length + ' 台';
+  }
+  // layout twice: zones resize after display toggles, then cars follow
+  function relayout(animate) { layout(animate); requestAnimationFrame(() => layout(animate)); }
+  window.addEventListener('resize', () => relayout(false));
+
+  // ---------- helpers ----------
+  const fmt = (v, d = 1) => v.toFixed(d);
+  const sleep = ms => new Promise(r => setTimeout(r, ms));
+  const speedMs = () => ({ 1: 1.8, 2: 1, 3: 0.5 })[$('speed').value] * 1000;
+  function setStat(id, val, unit) { const el = $(id); el.innerHTML = val + (unit ? '<small>' + unit + '</small>' : ''); el.classList.remove('bump'); el.offsetWidth; el.classList.add('bump'); }
+  function clearBuyers() { buyerEls.forEach(b => b.className = 'buyer'); cars.forEach(c => { c.sold = false; carEls.get(c.id).classList.remove('is-sold'); }); }
+
+  // ---------- one period ----------
+  async function step() {
+    if (busy) return; busy = true; $('btnStep').disabled = true;
+    period++;
+    const T = speedMs();
+    clearBuyers();
+    let rec;
+
+    if (mode === 'asym') {
+      const p = BUYER_MULT * mu;
+      setStat('sMu', fmt(mu), '萬'); setStat('sPrice', fmt(p), '萬');
+      $('chip').textContent = '第 ' + period + ' 期'; $('chip').classList.remove('eq');
+      const leaving = cars.filter(c => c.zone === 'lot' && c.x > p);
+      const returning = cars.filter(c => c.zone === 'home' && c.x <= p);
+      narrate(['step', '第 ' + period + ' 期 · 1/3 出價'], ['買方預期展示場平均品質約 <em>' + fmt(mu) + ' 萬</em>，按 1.5 倍出價 <em>' + fmt(p) + ' 萬</em>。']);
+      await sleep(T * 0.9);
+
+      // sellers decide
+      leaving.forEach(c => { c.zone = 'home'; carEls.get(c.id).classList.add('leaving'); });
+      returning.forEach(c => c.zone = 'lot');
+      relayout(true);
+      const lot = cars.filter(c => c.zone === 'lot');
+      const g = lot.filter(c => c.type === 'good').length, l = lot.length - g;
+      const q = lot.length ? lot.reduce((s, c) => s + c.x, 0) / lot.length : 0;
+      setStat('sGood', g, '台'); setStat('sLemon', l, '台'); setStat('sQ', fmt(q), '萬');
+      const lg = leaving.filter(c => c.type === 'good').length, ll = leaving.length - lg;
+      let s2 = leaving.length
+        ? '估價高於 ' + fmt(p) + ' 萬的車主說「這價不賣」：<span class="good-t">' + lg + ' 台好車</span>' + (ll ? '、<span class="lemon-t">' + ll + ' 台檸檬</span>' : '') + ' 開回家。展示場剩 <span class="good-t">' + g + ' 好</span> / <span class="lemon-t">' + l + ' 檸</span>，實際平均品質 ' + fmt(q) + ' 萬。'
+        : '沒有車主再退出。展示場 <span class="good-t">' + g + ' 好</span> / <span class="lemon-t">' + l + ' 檸</span>，平均品質 ' + fmt(q) + ' 萬。';
+      narrate(['step', '第 ' + period + ' 期 · 2/3 車主決定'], [s2]);
+      await sleep(T * 1.1);
+      setTimeout(() => leaving.forEach(c => carEls.get(c.id).classList.remove('leaving')), 600);
+
+      // trades: every listed car finds a buyer at p
+      const order = shuffledBuyers();
+      const loss = p - BUYER_MULT * q;
+      lot.forEach((c, i) => {
+        c.sold = true; carEls.get(c.id).classList.add('is-sold');
+        const b = buyerEls[order[i]];
+        b.classList.add(c.type === 'good' ? 'got-good' : 'got-lemon');
+        if (p > BUYER_MULT * c.x + 1e-9) b.classList.add('burned');
+      });
+      const burned = lot.filter(c => p > BUYER_MULT * c.x + 1e-9).length;
+      $('buyCount').textContent = lot.length; $('burnCount').textContent = burned;
+      setStat('sLoss', loss > 0.05 ? fmt(loss) : '0', '萬');
+      const nextMu = mu + LAMBDA * (q - mu);
+      const converged = Math.abs(q - mu) < 0.3 && leaving.length === 0;
+      eqCount = converged ? eqCount + 1 : 0;
+      let s3;
+      if (loss > 0.05) s3 = lot.length + ' 台成交，買方付 ' + fmt(p) + ' 萬買到平均只值 ' + fmt(BUYER_MULT * q) + ' 萬的車，<span class="loss-t">每台平均買貴 ' + fmt(loss) + ' 萬</span>。買方學到教訓，下期把預期品質往 ' + fmt(q) + ' 萬調。';
+      else s3 = lot.length + ' 台成交，價格 ' + fmt(p) + ' 萬剛好等於檸檬對買方的平均價值。買方不再吃虧，也不再調價。';
+      if (eqCount >= 1) {
+        s3 += ' <b>市場停在這裡：</b>展示場只剩 <span class="lemon-t">' + l + ' 台檸檬</span>，<span class="good-t">' + cars.filter(c => c.type === 'good' && c.zone === 'home').length + ' 台好車</span>全在家裡。買方其實願為好車付 75–150 萬、車主只要 50–100 萬，卻一筆也沒成交。這就是檸檬車版的劣幣驅良幣。';
+        $('chip').textContent = '第 ' + period + ' 期 · 均衡'; $('chip').classList.add('eq');
+      }
+      narrate(['step', '第 ' + period + ' 期 · 3/3 成交'], [s3], eqCount >= 1);
+      rec = { t: period, p, q, g, l, trades: lot.length };
+      mu = nextMu;
+      $('cTradeA').innerHTML = lot.length + '<small> 台（' + (g ? '含 ' + g + ' 台好車' : '全是檸檬') + '）</small>';
+      $('cGainA').innerHTML = fmt(lot.reduce((s, c) => s + (BUYER_MULT - 1) * c.x, 0), 0) + '<small> 萬</small>';
+    } else {
+      // symmetric: everyone sees quality, each car trades at 1.25x
+      $('chip').textContent = '第 ' + period + ' 期 · 有認證'; $('chip').classList.remove('eq');
+      cars.forEach(c => c.zone = 'lot'); relayout(true);
+      const lot = cars.slice();
+      const q = popMean, avgP = SYM_PRICE_MULT * q;
+      setStat('sMu', '可見', '各車品質'); setStat('sPrice', fmt(avgP), '萬 均'); setStat('sQ', fmt(q), '萬');
+      setStat('sGood', 50, '台'); setStat('sLemon', 50, '台'); setStat('sLoss', '0', '萬');
+      narrate(['step', '第 ' + period + ' 期 · 有認證'], ['買方看得見每台車的品質，好車按好車的價、檸檬按檸檬的價：<span class="good-t">好車 62–125 萬</span>、<span class="lemon-t">檸檬 19–31 萬</span>。']);
+      await sleep(T * 1.0);
+      const order = shuffledBuyers();
+      lot.forEach((c, i) => { c.sold = true; carEls.get(c.id).classList.add('is-sold'); buyerEls[order[i]].classList.add(c.type === 'good' ? 'got-good' : 'got-lemon'); });
+      $('buyCount').textContent = 100; $('burnCount').textContent = 0;
+      narrate(['step', '第 ' + period + ' 期 · 成交'], ['<b>100 台全部成交</b>，沒有人買貴。同一批車、同一群人，只差「買方知不知道品質」。多出來的交易利得 ' + fmt(cars.reduce((s, c) => s + 0.5 * c.x, 0) - 50 * 0.5 * 20, 0) + ' 萬，就是 Akerlof 說的資訊不對稱的代價（他模型裡的 N/2）。']);
+      rec = { t: period, p: avgP, q, g: 50, l: 50, trades: 100 };
+      $('cGainS').innerHTML = fmt(cars.reduce((s, c) => s + 0.5 * c.x, 0), 0) + '<small> 萬</small>';
+    }
+    history.push(rec);
+    drawCharts();
+    await sleep(T * 0.6);
+    busy = false; $('btnStep').disabled = false;
+    if (playing) { if (mode === 'asym' && eqCount >= 2 || mode === 'sym' && period >= 3 || period >= 30) stop(); else timer = setTimeout(step, T * 0.3); }
+  }
+
+  function shuffledBuyers() { const a = buyerEls.map((_, i) => i); for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(rnd() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; } return a; }
+  function narrate(step, lines, eq) {
+    const n = $('narr'); n.classList.toggle('eq', !!eq);
+    n.innerHTML = '<p class="step">' + step[1] + '</p>' + lines.map(s => '<p>' + s + '</p>').join('');
+  }
+
+  // ---------- charts ----------
+  const tip = $('tooltip');
+  function showTip(e, html) { tip.innerHTML = html; tip.style.left = e.clientX + 'px'; tip.style.top = e.clientY + 'px'; tip.classList.add('on'); }
+  function hideTip() { tip.classList.remove('on'); }
+
+  function drawCharts() {
+    const T = Math.max(8, history.length);
+    // price chart
+    {
+      const W = 440, H = 190, L = 38, R = 12, Tp = 10, B = 26, yMax = mode === 'sym' ? 80 : 80;
+      const xs = i => L + (i + 0.5) * (W - L - R) / T, ys = v => Tp + (H - Tp - B) * (1 - v / yMax);
+      let s = '';
+      [0, 20, 40, 60, 80].forEach(v => { s += `<line class="grid" x1="${L}" x2="${W - R}" y1="${ys(v)}" y2="${ys(v)}"/><text x="${L - 6}" y="${ys(v) + 4}" text-anchor="end">${v}</text>`; });
+      s += `<line class="axis" x1="${L}" x2="${W - R}" y1="${ys(0)}" y2="${ys(0)}"/>`;
+      // reference: lemon buyer-value band 30
+      if (mode === 'asym') s += `<line class="ref" x1="${L}" x2="${W - R}" y1="${ys(30)}" y2="${ys(30)}"/><text class="ref-t" x="${W - R}" y="${ys(30) - 4}" text-anchor="end">檸檬對買方的價值 ≈ 30</text>`;
+      for (let i = 0; i < T; i++) if (i < history.length || i % 2 === 0) s += `<text x="${xs(i)}" y="${H - 8}" text-anchor="middle">${i + 1}</text>`;
+      if (history.length) {
+        s += `<path class="ln-q" d="${history.map((h, i) => (i ? 'L' : 'M') + xs(i) + ' ' + ys(h.q)).join('')}"/>`;
+        s += `<path class="ln-p" d="${history.map((h, i) => (i ? 'L' : 'M') + xs(i) + ' ' + ys(h.p)).join('')}"/>`;
+        history.forEach((h, i) => { s += `<circle class="pt-q" cx="${xs(i)}" cy="${ys(h.q)}" r="3.5"/><circle class="pt-p" cx="${xs(i)}" cy="${ys(h.p)}" r="4"/>`; });
+        const last = history[history.length - 1], i = history.length - 1;
+        s += `<text x="${xs(i)}" y="${ys(last.p) - 9}" text-anchor="middle" style="fill:var(--accent);font-weight:500">${fmt(last.p)}</text>`;
+        history.forEach((h, i) => { s += `<rect class="hit" data-i="${i}" x="${xs(i) - (W - L - R) / T / 2}" y="${Tp}" width="${(W - L - R) / T}" height="${H - Tp - B}"/>`; });
+      }
+      $('chartP').innerHTML = s;
+    }
+    // count chart
+    {
+      const W = 440, H = 170, L = 38, R = 12, Tp = 10, B = 26, yMax = 100;
+      const bw = (W - L - R) / T, xs = i => L + i * bw, ys = v => Tp + (H - Tp - B) * (1 - v / yMax);
+      let s = '';
+      [0, 50, 100].forEach(v => { s += `<line class="grid" x1="${L}" x2="${W - R}" y1="${ys(v)}" y2="${ys(v)}"/><text x="${L - 6}" y="${ys(v) + 4}" text-anchor="end">${v}</text>`; });
+      s += `<line class="axis" x1="${L}" x2="${W - R}" y1="${ys(0)}" y2="${ys(0)}"/>`;
+      for (let i = 0; i < T; i++) if (i < history.length || i % 2 === 0) s += `<text x="${xs(i) + bw / 2}" y="${H - 8}" text-anchor="middle">${i + 1}</text>`;
+      history.forEach((h, i) => {
+        const x = xs(i) + bw * 0.18, w = bw * 0.64;
+        const yl = ys(h.l), hl = ys(0) - yl, yg = ys(h.l + h.g), hg = ys(h.l) - yg - (h.g ? 2 : 0);
+        s += `<rect class="bar-l" x="${x}" y="${yl}" width="${w}" height="${Math.max(0, hl)}" rx="2"/>`;
+        if (h.g) s += `<rect class="bar-g" x="${x}" y="${yg}" width="${w}" height="${Math.max(0, hg)}" rx="2"/>`;
+        s += `<rect class="hit" data-i="${i}" x="${xs(i)}" y="${Tp}" width="${bw}" height="${H - Tp - B}"/>`;
+      });
+      $('chartN').innerHTML = s;
+    }
+    document.querySelectorAll('.chart .hit').forEach(r => {
+      r.addEventListener('mousemove', e => { const h = history[+r.dataset.i]; showTip(e, `第 ${h.t} 期　出價 ${fmt(h.p)} 萬　實際品質 ${fmt(h.q)} 萬<br>展示場 好車 ${h.g} · 檸檬 ${h.l}　成交 ${h.trades} 台`); });
+      r.addEventListener('mouseleave', hideTip);
+    });
+  }
+
+  // ---------- controls ----------
+  function stop() { playing = false; clearTimeout(timer); $('btnPlay').textContent = '▶ 播放'; }
+  function play() { if (playing) return stop(); playing = true; $('btnPlay').textContent = '❚❚ 暫停'; if (!busy) step(); }
+  function reset() {
+    stop(); period = 0; mu = popMean; history = []; eqCount = 0; busy = false; $('btnStep').disabled = false;
+    cars.forEach(c => c.zone = 'lot'); clearBuyers(); relayout(true);
+    $('buyCount').textContent = 0; $('burnCount').textContent = 0;
+    ['sPrice', 'sMu', 'sQ', 'sLoss'].forEach(id => $(id).innerHTML = '—<small>萬</small>');
+    $('sGood').innerHTML = '50<small>台</small>'; $('sLemon').innerHTML = '50<small>台</small>';
+    $('chip').textContent = '第 0 期 · 開市前'; $('chip').classList.remove('eq');
+    narrate(['step', '開市前'], [mode === 'asym'
+      ? '100 台車都在展示場。買方知道市面上<em>一半是檸檬、一半是好車</em>，但分不出眼前這台是哪一種。按「播放」看市場怎麼一期一期縮小。'
+      : '對照組：有第三方認證（或保證、品牌），買方看得見每台車的品質。按「播放」看同一批車會怎麼成交。']);
+    drawCharts();
+  }
+  function setMode(m) { mode = m; $('modeA').setAttribute('aria-pressed', m === 'asym'); $('modeS').setAttribute('aria-pressed', m === 'sym'); reset(); }
+  $('btnPlay').addEventListener('click', play);
+  $('btnStep').addEventListener('click', () => { stop(); step(); });
+  $('btnReset').addEventListener('click', reset);
+  $('modeA').addEventListener('click', () => setMode('asym'));
+  $('modeS').addEventListener('click', () => setMode('sym'));
+
+  // static comparison numbers
+  $('cGainS').innerHTML = fmt(cars.reduce((s, c) => s + 0.5 * c.x, 0), 0) + '<small> 萬</small>';
+  $('cGainA').innerHTML = fmt(cars.filter(c => c.type === 'lemon').reduce((s, c) => s + 0.5 * c.x, 0), 0) + '<small> 萬</small>';
+
+  document.fonts && document.fonts.ready.then(() => relayout(false));
+  relayout(false); drawCharts();
+})();
+</script>
+
+</body>
+</html>
